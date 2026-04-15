@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "weather": {
+      "command": "python",
+      "args": ["mcp_servers/weather_server.py"],
+      "env": {"QWEATHER_API_KEY": "${QWEATHER_API_KEY}"}
+    },
+    "poi": {
+      "command": "python",
+      "args": ["mcp_servers/poi_server.py"]
+    },
+    "transport": {
+      "command": "python",
+      "args": ["mcp_servers/transport_server.py"]
+    },
+    "knowledge": {
+      "command": "python",
+      "args": ["mcp_servers/knowledge_server.py"]
+    }
+  }
+}

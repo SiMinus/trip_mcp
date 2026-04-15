@@ -1,0 +1,316 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f5f7fa;
+  color: #1a1a2e;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+header h1 { font-size: 20px; }
+
+.new-chat {
+  padding: 6px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.new-chat:hover { background: #f1f5f9; }
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.welcome {
+  margin: auto;
+  text-align: center;
+  color: #64748b;
+  line-height: 2;
+}
+.welcome ul { list-style: none; }
+
+.msg { max-width: 90%; }
+.msg.user { align-self: flex-end; }
+.msg.assistant { align-self: flex-start; }
+
+.msg-label {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.msg.user .msg-label { text-align: right; }
+
+.msg-content {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.7;
+  font-size: 14px;
+}
+.msg.user .msg-content {
+  background: #3b82f6;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.msg.assistant .msg-content {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 4px;
+}
+
+.msg-content p { margin-bottom: 8px; }
+.msg-content p:last-child { margin-bottom: 0; }
+.msg-content ul, .msg-content ol { padding-left: 20px; margin-bottom: 8px; }
+.msg-content li { margin-bottom: 4px; }
+.msg-content strong { color: #1e40af; }
+
+.tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-card {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.tool-card summary {
+  cursor: pointer;
+  user-select: none;
+}
+.tool-detail {
+  margin-top: 8px;
+}
+.tool-section {
+  margin-bottom: 6px;
+}
+.tool-section span {
+  font-weight: 600;
+  font-size: 12px;
+  color: #64748b;
+}
+.tool-section pre {
+  background: #f8fafc;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 4px;
+}
+
+.loading {
+  align-self: flex-start;
+  color: #94a3b8;
+  font-size: 14px;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+
+footer input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+}
+footer input:focus { border-color: #3b82f6; }
+
+footer button {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+footer button:hover { background: #2563eb; }
+footer button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── TravelForm ─────────────────────────────────────── */
+.travel-form-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px 24px;
+  min-width: 480px;
+  max-width: 640px;
+}
+
+.form-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #1e293b;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 16px;
+}
+
+.form-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.form-table td {
+  padding: 8px 6px;
+  vertical-align: top;
+}
+
+.form-table td:first-child {
+  width: 90px;
+  padding-top: 10px;
+  font-size: 13px;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.form-table label {
+  font-size: 13px;
+  color: #475569;
+}
+
+.req { color: #ef4444; margin-left: 2px; }
+
+.form-table input[type="text"],
+.form-table input[type="number"] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+.form-table input:focus { border-color: #3b82f6; }
+.form-table input.err { border-color: #ef4444; }
+
+.err-msg {
+  display: block;
+  font-size: 11px;
+  color: #ef4444;
+  margin-top: 3px;
+}
+
+.radio-group,
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.radio-btn,
+.checkbox-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+.radio-btn input,
+.checkbox-btn input {
+  display: none;
+}
+.radio-btn.active,
+.checkbox-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+.radio-btn:hover,
+.checkbox-btn:hover {
+  border-color: #3b82f6;
+}
+
+.submit-plan-btn {
+  width: 100%;
+  padding: 10px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.submit-plan-btn:hover { background: #2563eb; }
+
+/* 已提交摘要卡片 */
+.travel-state-summary {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.travel-state-summary > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #166534;
+  display: block;
+  margin-bottom: 10px;
+}
+.travel-state-summary table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.travel-state-summary td {
+  padding: 4px 8px;
+}
+.travel-state-summary td:first-child {
+  color: #64748b;
+  width: 80px;
+}
+.travel-state-summary td:last-child {
+  color: #1e293b;
+  font-weight: 500;
+}
