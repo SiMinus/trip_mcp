@@ -1,10 +1,11 @@
 """LangGraph ReAct Agent — 通过 MCP 协议真实调用 4 个工具服务"""
 
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Annotated, Optional
 
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
@@ -15,6 +16,28 @@ from langgraph.checkpoint.memory import MemorySaver
 from typing_extensions import TypedDict
 
 from agent.config import settings
+
+TOOL_CALL_STATS: Counter[str] = Counter()
+ROUTE_AUDIT_STATS: Counter[str] = Counter()
+TRANSPORT_TOOL_NAMES = {
+    "plan_walking_route",
+    "plan_driving_route",
+    "plan_transit_route",
+}
+ROUTE_JUDGEMENT_KEYWORDS = (
+    "步行",
+    "打车",
+    "驾车",
+    "地铁",
+    "公交",
+    "通勤",
+    "顺路",
+    "多久",
+    "分钟",
+    "小时",
+    "到达",
+    "路线",
+)
 
 # ── MCP 内容块提取 ─────────────────────────────────────────────────────
 def _extract_mcp_text(content) -> str:
@@ -53,6 +76,20 @@ SYSTEM_PROMPT = """你是「智慧旅游助手」，一个专业的旅行规划 
 2. 规划行程时要考虑天气、距离、开放时间等实际因素
 3. 给出的建议要具体可执行，包含地点名称、预计时间、交通方式
 4. 主动调用知识库补充景点文化背景，让行程更有深度
+
+规划与路线验证规则：
+1. 规划行程时默认按「先用 poi 确认候选点位 -> 再用 transport 验证点位间路程/耗时 -> 最后输出行程」执行
+2. 只要回答里涉及“步行多久、打车多久、是否顺路、一天能否跑完、建议地铁还是打车”这类判断，必须先调用 transport 工具，禁止凭常识估算
+3. 如果只有地点名没有坐标，优先使用支持地点名输入的 transport 工具，必要时先调用 resolve_location 再验证路线
+4. 若用户问题涉及两个及以上具体点位，默认至少补一次路线验证后再给最终建议
+
+示例 1：
+用户：上午去西湖，下午去灵隐寺，顺路吗？
+正确做法：先调用 poi 搜索或解析西湖、灵隐寺坐标，再调用 transport 验证路线，最后根据真实路程与耗时回答是否顺路。
+
+示例 2：
+用户：河坊街和西溪湿地一天能跑完吗？
+正确做法：先确认两个点位，再调用 transport 获取通勤时间；只有拿到工具结果后，才能判断一天是否可行。
 """
 
 # 从 mcp_config.json 加载 server 配置
@@ -116,6 +153,28 @@ def _make_system_message(travel_state: Optional[dict]) -> SystemMessage:
     return SystemMessage(content=content)
 
 
+def _mentions_route_judgement(text: str) -> bool:
+    return bool(text) and any(keyword in text for keyword in ROUTE_JUDGEMENT_KEYWORDS)
+
+
+def _has_transport_tool_since_last_human(messages: list) -> bool:
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            return False
+        if isinstance(msg, ToolMessage) and msg.name in TRANSPORT_TOOL_NAMES:
+            return True
+    return False
+
+
+def _should_force_transport_validation(state: GraphState, response) -> bool:
+    if getattr(response, "tool_calls", None):
+        return False
+    text = _extract_mcp_text(getattr(response, "content", ""))
+    if not _mentions_route_judgement(text):
+        return False
+    return not _has_transport_tool_since_last_human(list(state["messages"]))
+
+
 # ── 构建 Agent ─────────────────────────────────────────────────────────
 async def create_agent_client():
     """创建 MCP 客户端，返回 (client, compiled_graph)"""
@@ -127,6 +186,15 @@ async def create_agent_client():
         sys_msg = _make_system_message(state.get("travel_state"))
         messages = [sys_msg] + list(state["messages"])
         response = await llm.ainvoke(messages, config)
+        if _should_force_transport_validation(state, response):
+            guard_msg = SystemMessage(
+                content=(
+                    "当前回答包含交通、通勤或顺路判断，但本轮还没有 transport 工具结果支撑。"
+                    "现在不要直接输出最终答案；请先调用合适的 transport 工具验证路线。"
+                    "如果地点还未解析，可先调用 poi 或 resolve_location。"
+                )
+            )
+            response = await llm.ainvoke([sys_msg, guard_msg] + list(state["messages"]), config)
         return {"messages": [response]}
 
     # 自定义 tools_node：手动执行工具调用，不注入 ToolRuntime
@@ -210,6 +278,7 @@ async def invoke_agent(
     _step = 0
     _trace: list[str] = []  # 收集完整推理链，流程结束后统一打印
     _streamed_text = ""
+    _tool_names: list[str] = []
 
     async for event in agent.astream_events(input_msg, config=config, version="v2"):
         kind = event["event"]
@@ -248,6 +317,8 @@ async def invoke_agent(
 
         elif kind == "on_tool_start":
             raw_input = event["data"].get("input", {})
+            _tool_names.append(event["name"])
+            TOOL_CALL_STATS[event["name"]] += 1
             # ToolRuntime 等不可序列化对象转为字符串
             safe_input = {
                 k: v if isinstance(v, (str, int, float, bool, type(None))) else str(v)
@@ -275,3 +346,14 @@ async def invoke_agent(
     for line in _trace:
         print(line)
     print("="*58 + "\n")
+    transport_used = any(name in TRANSPORT_TOOL_NAMES for name in _tool_names)
+    route_related = _mentions_route_judgement(user_message) or _mentions_route_judgement(_streamed_text)
+    if route_related:
+        ROUTE_AUDIT_STATS["route_related_requests"] += 1
+    if route_related and not transport_used:
+        ROUTE_AUDIT_STATS["route_related_without_transport"] += 1
+        print(f"[ROUTE AUDIT] missing transport | user={user_message[:120]}")
+    print(
+        f"[TOOL STATS] current={_tool_names} | transport_used={transport_used} | "
+        f"tool_totals={dict(TOOL_CALL_STATS)} | route_audit={dict(ROUTE_AUDIT_STATS)}"
+    )

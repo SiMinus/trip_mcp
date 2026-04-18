@@ -1,5 +1,6 @@
 """POI 搜索 MCP Server — 调用高德地图真实 API"""
 
+import json
 import os
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -17,7 +18,7 @@ async def search_poi(
     category: str = "",
     page_size: int = 5,
 ) -> str:
-    """在指定城市搜索 POI（景点/酒店/餐厅等）。
+    """在指定城市搜索 POI（景点/酒店/餐厅等），返回结构化 JSON 文本。
     keyword: 搜索关键词，如"西湖""火锅"
     city: 城市名
     category: 可选分类，如 "风景名胜""餐饮""酒店"
@@ -47,16 +48,27 @@ async def search_poi(
     if not pois:
         return f'未找到"{keyword}"相关结果'
 
-    lines = []
+    results = []
     for p in pois:
-        addr = p.get("address", "无")
-        tel = p.get("tel", "无")
-        rating = p.get("biz_ext", {}).get("rating", "-")
-        lines.append(
-            f"• {p['name']}  地址: {addr}  评分: {rating}  电话: {tel}  "
-            f"坐标: {p['location']}"
+        biz = p.get("biz_ext", {})
+        results.append(
+            {
+                "name": p.get("name", ""),
+                "address": p.get("address", ""),
+                "location": p.get("location", ""),
+                "rating": biz.get("rating", "-"),
+                "tel": p.get("tel", ""),
+                "type": p.get("type", ""),
+                "poi_id": p.get("id", ""),
+            }
         )
-    return f'在{city}搜索"{keyword}"的结果：\n' + "\n".join(lines)
+    payload = {
+        "city": city,
+        "keyword": keyword,
+        "category": category,
+        "results": results,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
