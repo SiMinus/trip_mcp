@@ -7,6 +7,9 @@ from typing_extensions import TypedDict
 
 from langchain_openai import ChatOpenAI
 from agent.config import settings
+from agent.retry_manager import SmartRetryManager
+
+retry_manager = SmartRetryManager()
 
 
 class TravelState(TypedDict):
@@ -44,7 +47,18 @@ async def extract_travel_state(user_message: str) -> TravelState:
         temperature=0,
     )
     prompt = _EXTRACT_PROMPT.format(user_message=user_message)
-    response = await llm.ainvoke([{"role": "user", "content": prompt}])
+    # response = await llm.ainvoke([{"role": "user", "content": prompt}])
+    result = await retry_manager.execute_with_retry(
+        "openai_extract_state",
+        llm.ainvoke,
+        [{"role": "user", "content": prompt}],
+    )
+    if not result["success"]:
+        error = result.get("error")
+        if isinstance(error, Exception):
+            raise error
+        raise RuntimeError(f"extract_travel_state LLM 调用失败: {error}")
+    response = result["data"]
     content = response.content.strip()
 
     # 去掉可能出现的 markdown 代码块

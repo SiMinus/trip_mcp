@@ -16,9 +16,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from typing_extensions import TypedDict
 
 from agent.config import settings
+from agent.retry_manager import SmartRetryManager
 
 TOOL_CALL_STATS: Counter[str] = Counter()
 ROUTE_AUDIT_STATS: Counter[str] = Counter()
+retry_manager = SmartRetryManager()
 TRANSPORT_TOOL_NAMES = {
     "plan_walking_route",
     "plan_driving_route",
@@ -175,6 +177,15 @@ def _should_force_transport_validation(state: GraphState, response) -> bool:
     return not _has_transport_tool_since_last_human(list(state["messages"]))
 
 
+def _unwrap_retry_result(result: dict, context: str):
+    if result["success"]:
+        return result["data"]
+    error = result.get("error")
+    if isinstance(error, Exception):
+        raise error
+    raise RuntimeError(f"{context} LLM 调用失败: {error}")
+
+
 # ── 构建 Agent ─────────────────────────────────────────────────────────
 async def create_agent_client():
     """创建 MCP 客户端，返回 (client, compiled_graph)"""
@@ -185,7 +196,14 @@ async def create_agent_client():
     async def agent_node(state: GraphState, config: RunnableConfig) -> dict:
         sys_msg = _make_system_message(state.get("travel_state"))
         messages = [sys_msg] + list(state["messages"])
-        response = await llm.ainvoke(messages, config)
+        # response = await llm.ainvoke(messages, config)
+        result = await retry_manager.execute_with_retry(
+            "openai_agent",
+            llm.ainvoke,
+            messages,
+            config=config,
+        )
+        response = _unwrap_retry_result(result, "agent_node")
         if _should_force_transport_validation(state, response):
             guard_msg = SystemMessage(
                 content=(
@@ -194,7 +212,14 @@ async def create_agent_client():
                     "如果地点还未解析，可先调用 poi 或 resolve_location。"
                 )
             )
-            response = await llm.ainvoke([sys_msg, guard_msg] + list(state["messages"]), config)
+            # response = await llm.ainvoke([sys_msg, guard_msg] + list(state["messages"]), config)
+            retry_result = await retry_manager.execute_with_retry(
+                "openai_agent_guard",
+                llm.ainvoke,
+                [sys_msg, guard_msg] + list(state["messages"]),
+                config=config,
+            )
+            response = _unwrap_retry_result(retry_result, "agent_node_guard")
         return {"messages": [response]}
 
     # 自定义 tools_node：手动执行工具调用，不注入 ToolRuntime
