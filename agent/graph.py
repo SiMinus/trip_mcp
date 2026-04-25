@@ -104,6 +104,10 @@ def _build_server_params() -> dict:
     env_map = {
         "QWEATHER_API_KEY": settings.qweather_api_key,
         "AMAP_API_KEY": settings.amap_api_key,
+        "BAIDU_MAP_AK": settings.baidu_map_ak,
+        "TENCENT_MAP_KEY": settings.tencent_map_key,
+        "REDIS_URL": settings.redis_url,
+        "POI_CACHE_TTL_SECONDS": str(settings.poi_cache_ttl_seconds),
         "CHROMA_PERSIST_DIR": settings.chroma_persist_dir,
         "EMBEDDING_MODEL": settings.embedding_model,
     }
