@@ -2,20 +2,24 @@
   "mcpServers": {
     "weather": {
       "command": "python",
-      "args": ["mcp_servers/weather_server.py"],
+      "args": ["-m", "mcp_servers.weather_server"],
       "env": {"QWEATHER_API_KEY": "${QWEATHER_API_KEY}"}
     },
     "poi": {
       "command": "python",
-      "args": ["mcp_servers/poi_server.py"]
+      "args": ["-m", "mcp_servers.poi_server"]
     },
     "transport": {
       "command": "python",
-      "args": ["mcp_servers/transport_server.py"]
+      "args": ["-m", "mcp_servers.transport_server"]
     },
     "knowledge": {
       "command": "python",
-      "args": ["mcp_servers/knowledge_server.py"]
+      "args": ["-m", "mcp_servers.knowledge_server"]
+    },
+    "flight": {
+      "command": "python",
+      "args": ["-m", "mcp_servers.flight_server"]
     }
   }
 }

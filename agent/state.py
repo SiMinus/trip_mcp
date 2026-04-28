@@ -24,6 +24,23 @@ BUDGET_OPTIONS = ["经济实惠", "适中", "豪华享受"]
 TRAVEL_GROUP_OPTIONS = ["独自旅行", "情侣出游", "亲子家庭", "朋友结伴", "带老人出行"]
 INTEREST_OPTIONS = ["历史文化", "自然风景", "美食探索", "购物娱乐", "休闲放松", "运动冒险", "艺术展览"]
 
+INTENT_LABELS = [
+    ("planning", "行程规划"),
+    ("booking",  "订票（机票/火车票/汽车票/门票）"),
+    ("other",    "其他问答"),
+]
+
+_INTENT_PROMPT = """判断用户消息属于以下哪一类意图，只返回对应的英文 key，不要任何解释。
+
+意图分类：
+- planning : 用户想规划旅行行程，希望得到目的地、景点、路线、行程安排等
+- booking  : 用户想购买/搜索机票、火车票、汽车票、景区门票等票务
+- other    : 其他问答、闲聊、追问、地址查询、天气、攻略等不属于上两类的请求
+
+用户消息：{user_message}
+
+只返回：planning 或 booking 或 other"""
+
 _EXTRACT_PROMPT = f"""从用户的旅游需求描述中提取以下信息，以 JSON 格式返回。如果某字段在描述中未提及，返回 null。
 
 字段说明：
@@ -89,6 +106,30 @@ async def extract_travel_state(user_message: str) -> TravelState:
         travel_group=data.get("travel_group") if data.get("travel_group") in TRAVEL_GROUP_OPTIONS else None,
         interests=[i for i in interests if i in INTEREST_OPTIONS],
     )
+
+
+async def classify_intent(user_message: str) -> str:
+    """将用户消息分类为 planning / booking / other"""
+    llm = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+        temperature=0,
+    )
+    prompt = _INTENT_PROMPT.format(user_message=user_message)
+    result = await retry_manager.execute_with_retry(
+        "openai_intent",
+        llm.ainvoke,
+        [{"role": "user", "content": prompt}],
+    )
+    if not result["success"]:
+        return "other"  # 分类失败时降级为直接对话
+    raw = result["data"].content.strip().lower()
+    if "planning" in raw:
+        return "planning"
+    if "booking" in raw:
+        return "booking"
+    return "other"
 
 
 def state_to_prompt(state: TravelState) -> str:

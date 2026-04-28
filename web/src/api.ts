@@ -24,6 +24,18 @@ export interface ExtractResponse {
   };
 }
 
+export type IntentType = "planning" | "booking" | "other";
+
+export async function classifyIntent(message: string): Promise<IntentType> {
+  const resp = await fetch("/api/intent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  const data = await resp.json();
+  return (data.intent as IntentType) ?? "other";
+}
+
 export async function extractTravelState(message: string): Promise<ExtractResponse> {
   const resp = await fetch("/api/extract", {
     method: "POST",

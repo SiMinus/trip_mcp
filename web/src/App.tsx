@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { chatStream, extractTravelState, TravelState, ExtractResponse, SSEEvent } from "./api";
+import { chatStream, extractTravelState, classifyIntent, TravelState, ExtractResponse, SSEEvent } from "./api";
 
 interface ToolCall {
   tool: string;
@@ -61,66 +61,8 @@ export default function App() {
     userScrolledUp.current = !atBottom;
   };
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
-    setInput("");
-    setLoading(true);
-    userScrolledUp.current = false;  // 发送新消息时重置，自动滚到底
-
-    // 1. 显示用户消息
-    const userMsg: Message = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
-
-    // 2. 调用 /api/extract 提取旅行状态
-    let extractResult: ExtractResponse | null = null;
-    try {
-      extractResult = await extractTravelState(text);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "⚠️ 信息提取失败，请检查后端服务是否启动" },
-      ]);
-      setLoading(false);
-      return;
-    }
-
-    // 3. 插入表单消息，等待用户填写确认
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "form",
-        content: "",
-        formData: {
-          initial: extractResult!.state,
-          options: extractResult!.options,
-        },
-        formSubmitted: false,
-      },
-    ]);
-    setLoading(false);
-  };
-
-  // 用户提交表单后触发规划
-  const startPlanning = async (state: TravelState, formMsgIndex: number) => {
-    // 标记表单为已提交
-    setMessages((prev) =>
-      prev.map((m, i) => (i === formMsgIndex ? { ...m, formSubmitted: true } : m))
-    );
-
-    userScrolledUp.current = false;
-    setLoading(true);
-
-    const interests = state.interests?.join("、") || "综合游览";
-    const planMessage =
-      `请为我规划旅行方案：\n` +
-      `- 目的地：${state.destination}\n` +
-      `- 旅行天数：${state.days} 天\n` +
-      `- 预算：${state.budget}\n` +
-      `- 同行人：${state.travel_group}\n` +
-      `- 兴趣偏好：${interests}\n\n` +
-      `请调用工具查询天气、搜索景点、检索旅游攻略，生成详细的每日行程安排。`;
-
+  // ── 核心流式对话（首次传 travelState，后续传 null 由 checkpointer 恢复）──
+  const streamChat = async (message: string, travelState: TravelState | null) => {
     let content = "";
     const toolCalls: ToolCall[] = [];
     let sid = sessionId;
@@ -139,7 +81,7 @@ export default function App() {
     };
 
     try {
-      for await (const event of chatStream(planMessage, sid, state)) {
+      for await (const event of chatStream(message, sid, travelState)) {
         switch (event.type) {
           case "token":
             content += event.content || "";
@@ -170,6 +112,73 @@ export default function App() {
       updateAssistant();
     }
     setLoading(false);
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    setLoading(true);
+    userScrolledUp.current = false;
+
+    // 意图识别：planning → 提取信息+表单；booking/other → 直接对话
+    let intent = "other";
+    try {
+      intent = await classifyIntent(text);
+    } catch {
+      // 识别失败时降级为直接对话
+    }
+
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+
+    if (intent === "planning") {
+      // 行程规划：提取旅行信息 → 弹出表单
+      let extractResult: ExtractResponse | null = null;
+      try {
+        extractResult = await extractTravelState(text);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "⚠️ 信息提取失败，请检查后端服务是否启动" },
+        ]);
+        setLoading(false);
+        return;
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "form",
+          content: "",
+          formData: { initial: extractResult!.state, options: extractResult!.options },
+          formSubmitted: false,
+        },
+      ]);
+      setLoading(false);
+    } else {
+      // booking / other：直接对话，travel_state 由 LangGraph checkpointer 恢复
+      await streamChat(text, null);
+    }
+  };
+
+  // 用户提交表单后触发规划
+  const startPlanning = async (state: TravelState, formMsgIndex: number) => {
+    setMessages((prev) =>
+      prev.map((m, i) => (i === formMsgIndex ? { ...m, formSubmitted: true } : m))
+    );
+    userScrolledUp.current = false;
+    setLoading(true);
+
+    const interests = state.interests?.join("、") || "综合游览";
+    const planMessage =
+      `请为我规划旅行方案：\n` +
+      `- 目的地：${state.destination}\n` +
+      `- 旅行天数：${state.days} 天\n` +
+      `- 预算：${state.budget}\n` +
+      `- 同行人：${state.travel_group}\n` +
+      `- 兴趣偏好：${interests}\n\n` +
+      `请调用工具查询天气、搜索景点、检索旅游攻略，生成详细的每日行程安排。`;
+
+    await streamChat(planMessage, state);
   };
 
   const newChat = () => {
@@ -244,7 +253,41 @@ export default function App() {
               )}
               {msg.content && (
                 <div className="msg-content">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      a: ({ href, children }) => {
+                        const isBooking =
+                          href?.includes("ctrip.com") ||
+                          href?.includes("fliggy.com") ||
+                          href?.includes("qunar.com");
+                        if (isBooking) {
+                          return (
+                            <button
+                              className="booking-btn"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `即将跳转到第三方平台完成预订，确认继续？\n${href}`
+                                  )
+                                ) {
+                                  window.open(href, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                            >
+                              {children} ✈️
+                            </button>
+                          );
+                        }
+                        return (
+                          <a href={href} target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        );
+                      },
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
                 </div>
               )}
             </div>

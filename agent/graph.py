@@ -65,7 +65,11 @@ def _extract_mcp_text(content) -> str:
         return "\n".join(parts)
     return str(content)
 
+import datetime as _dt
+
 SYSTEM_PROMPT = """你是「智慧旅游助手」，一个专业的旅行规划 AI Agent。
+
+【当前日期】{today}  ← 所有涉及日期的场景（订票、行程、天气）必须以此为基准，禁止使用历史年份。
 
 你可以调用以下工具帮助用户：
 - weather 类工具：查询目的地实时天气和未来预报
@@ -92,6 +96,9 @@ SYSTEM_PROMPT = """你是「智慧旅游助手」，一个专业的旅行规划 
 示例 2：
 用户：河坊街和西溪湿地一天能跑完吗？
 正确做法：先确认两个点位，再调用 transport 获取通勤时间；只有拿到工具结果后，才能判断一天是否可行。
+
+工具结果透传规则：
+- 工具返回的 Markdown 内容（尤其是链接 `[文字](url)`）必须**原文**输出到回复中，禁止用"已生成链接"、"可点击查看"等文字替代，用户必须在你的回复里看到可点击的真实链接。
 """
 
 # 从 mcp_config.json 加载 server 配置
@@ -111,6 +118,7 @@ def _build_server_params() -> dict:
         "CHROMA_PERSIST_DIR": settings.chroma_persist_dir,
         "EMBEDDING_MODEL": settings.embedding_model,
     }
+    project_root = str(_config_path.parent)
     servers = {}
     for name, cfg in _mcp_config["mcpServers"].items():
         servers[name] = {
@@ -118,6 +126,7 @@ def _build_server_params() -> dict:
             "command": cfg["command"],
             "args": cfg["args"],
             "env": env_map,
+            "cwd": project_root,
         }
     return servers
 
@@ -145,7 +154,7 @@ class GraphState(TypedDict):
 
 # ── 系统提示动态注入 travel_state ──────────────────────────────────────
 def _make_system_message(travel_state: Optional[dict]) -> SystemMessage:
-    content = SYSTEM_PROMPT
+    content = SYSTEM_PROMPT.format(today=_dt.date.today().isoformat())
     if travel_state:
         interests = "、".join(travel_state.get("interests") or []) or "综合游览"
         content += (

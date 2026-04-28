@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from agent.graph import create_agent_client, invoke_agent
-from agent.state import extract_travel_state, BUDGET_OPTIONS, TRAVEL_GROUP_OPTIONS, INTEREST_OPTIONS
+from agent.state import extract_travel_state, classify_intent, BUDGET_OPTIONS, TRAVEL_GROUP_OPTIONS, INTEREST_OPTIONS
 
 # 全局 agent 实例
 _client = None
@@ -38,6 +38,13 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = ""
     travel_state: Optional[dict] = None
+
+
+@app.post("/api/intent")
+async def intent(req: ChatRequest):
+    """识别用户消息意图：planning / booking / other"""
+    label = await classify_intent(req.message)
+    return {"intent": label}
 
 
 @app.post("/api/extract")
