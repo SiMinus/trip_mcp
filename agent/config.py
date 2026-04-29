@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     openai_model: str = "qwen-plus"
     amap_api_key: str = ""
+    amap_js_key: str = ""
     baidu_map_ak: str = ""
     tencent_map_key: str = ""
     redis_url: str = ""

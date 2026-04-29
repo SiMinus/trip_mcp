@@ -144,3 +144,54 @@ def state_to_prompt(state: TravelState) -> str:
         f"- 兴趣偏好：{interests_str}\n\n"
         f"请根据以上信息，调用工具查询天气、搜索景点、检索旅游攻略，生成详细的每日行程安排。"
     )
+
+
+# ─── 行程文本 → 结构化 JSON ───────────────────────────────────────────
+_PARSE_ITINERARY_PROMPT = """你是一个数据提取助手。从下面的旅游行程规划文本中，提取每天的景点安排，输出严格的 JSON。
+
+输出格式（数组，每个元素代表一天）：
+[
+  {{
+    "day": 1,
+    "spots": [
+      {{"name": "景点名称", "time": "09:00", "duration": "2小时"}},
+      ...
+    ]
+  }},
+  ...
+]
+
+规则：
+- time 字段格式为 HH:MM（24小时制），如 "09:00"、"14:30"，没有明确时间则合理推断
+- duration 为预计停留时长字符串，如 "1小时"、"2小时"、"30分钟"
+- name 只保留景点/餐厅/酒店名称，去掉括号说明
+- 只输出 JSON，不要任何解释或 markdown 代码块
+
+行程文本：
+{itinerary_text}"""
+
+
+async def parse_itinerary(itinerary_text: str) -> list[dict]:
+    """将 LLM 输出的行程文本解析为结构化 [{day, spots:[{name,time,duration}]}]"""
+    llm = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+        temperature=0,
+    )
+    prompt = _PARSE_ITINERARY_PROMPT.format(itinerary_text=itinerary_text)
+    result = await retry_manager.execute_with_retry(
+        "openai_parse_itinerary",
+        llm.ainvoke,
+        [{"role": "user", "content": prompt}],
+    )
+    if not result["success"]:
+        return []
+    raw = result["data"].content.strip()
+    # 去掉可能的 ```json ``` 包裹
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return []

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { chatStream, extractTravelState, classifyIntent, TravelState, ExtractResponse, SSEEvent } from "./api";
+import { chatStream, extractTravelState, classifyIntent, parseItinerary, fetchAmapKey, TravelState, ExtractResponse, SSEEvent } from "./api";
 
 interface ToolCall {
   tool: string;
@@ -30,6 +30,7 @@ export default function App() {
   });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mapLoadingIdx, setMapLoadingIdx] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState(
     () => localStorage.getItem("trip_session_id") || ""
   );
@@ -288,6 +289,30 @@ export default function App() {
                   >
                     {msg.content}
                   </ReactMarkdown>
+                  {/* 行程规划消息末尾显示「查看地图规划」按钮 */}
+                  {msg.role === "assistant" && /第[一二三四五六七1-9]天|Day\s*[1-9]/i.test(msg.content) && (
+                    <button
+                      className="map-btn"
+                      disabled={mapLoadingIdx === i}
+                      onClick={async () => {
+                        setMapLoadingIdx(i);
+                        try {
+                          const [days, key] = await Promise.all([
+                            parseItinerary(msg.content),
+                            fetchAmapKey(),
+                          ]);
+                          (window as any).__openTripMap?.(days, key);
+                        } catch (e) {
+                          console.error("parse_itinerary failed", e);
+                          alert("行程解析失败，请确认后端服务是否已启动");
+                        } finally {
+                          setMapLoadingIdx(null);
+                        }
+                      }}
+                    >
+                      {mapLoadingIdx === i ? "⏳ 解析中..." : "🗺️ 查看地图规划"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

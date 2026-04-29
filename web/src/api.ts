@@ -45,6 +45,39 @@ export async function extractTravelState(message: string): Promise<ExtractRespon
   return resp.json();
 }
 
+export interface ItinerarySpot {
+  name: string;
+  time: string;
+  duration: string;
+  lng: number | null;
+  lat: number | null;
+}
+
+export interface ItineraryDay {
+  day: number;
+  spots: ItinerarySpot[];
+}
+
+export async function parseItinerary(text: string): Promise<ItineraryDay[]> {
+  const resp = await fetch("/api/parse_itinerary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const data = await resp.json();
+  return data.days as ItineraryDay[];
+}
+
+export async function fetchAmapKey(): Promise<string> {
+  try {
+    const resp = await fetch("/api/config/amap_key");
+    const data = await resp.json();
+    return data.key ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function* chatStream(
   message: string,
   sessionId: string,

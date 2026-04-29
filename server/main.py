@@ -5,13 +5,18 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from agent.config import settings
 from agent.graph import create_agent_client, invoke_agent
-from agent.state import extract_travel_state, classify_intent, BUDGET_OPTIONS, TRAVEL_GROUP_OPTIONS, INTEREST_OPTIONS
+from agent.state import (
+    extract_travel_state, classify_intent, parse_itinerary,
+    BUDGET_OPTIONS, TRAVEL_GROUP_OPTIONS, INTEREST_OPTIONS,
+)
 
 # 全局 agent 实例
 _client = None
@@ -76,3 +81,50 @@ async def chat(req: ChatRequest):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "tools": _agent is not None}
+
+
+@app.get("/api/config/amap_key")
+async def amap_key():
+    """向前端暴露高德地图 Web JS Key"""
+    return {"key": settings.amap_js_key or ""}
+
+
+class ParseItineraryRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/parse_itinerary")
+async def parse_itinerary_endpoint(req: ParseItineraryRequest):
+    """将行程文本解析为结构化 JSON，并通过高德 Geocoding 补充坐标"""
+    days = await parse_itinerary(req.text)
+    if not days:
+        return {"days": []}
+
+    amap_key = settings.amap_api_key
+    async with httpx.AsyncClient(timeout=10) as client:
+        for day in days:
+            for spot in day.get("spots", []):
+                name = spot.get("name", "")
+                if not name or not amap_key:
+                    spot["lng"] = None
+                    spot["lat"] = None
+                    continue
+                try:
+                    resp = await client.get(
+                        "https://restapi.amap.com/v3/geocode/geo",
+                        params={"key": amap_key, "address": name, "output": "JSON"},
+                    )
+                    data = resp.json()
+                    geocodes = data.get("geocodes") or []
+                    if geocodes:
+                        loc = geocodes[0]["location"].split(",")
+                        spot["lng"] = float(loc[0])
+                        spot["lat"] = float(loc[1])
+                    else:
+                        spot["lng"] = None
+                        spot["lat"] = None
+                except Exception:
+                    spot["lng"] = None
+                    spot["lat"] = None
+
+    return {"days": days}
